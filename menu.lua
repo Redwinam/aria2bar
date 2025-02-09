@@ -1,6 +1,6 @@
 local utils = require("aria2.utils")
 local client = require("aria2.client")
-local log = hs.logger.new('aria2menu', 'debug')
+local log = hs.logger.new('aria2menu', 'info')
 
 local M = {
     menuIcon = nil,
@@ -8,11 +8,9 @@ local M = {
     currentTasks = {}  -- 存储所有任务的状态
 }
 
--- 缓存上次的状态
-local lastStatus = {
-    numActive = 0,
-    downloadSpeed = 0
-}
+
+
+
 
 -- 处理任务数据
 local function processTask(task)
@@ -39,14 +37,13 @@ local function processTask(task)
         end
     end
     
-    -- 使用 addedTime 作为完成时间
-    print(string.format('任务时间调试: addedTime=%s, status=%s', 
-        tostring(task.addedTime),
-        tostring(task.status)))
-    local completedTime = tonumber(task.addedTime)
-    if not completedTime or completedTime == 0 then
-        -- 如果没有 addedTime，尝试使用当前时间
-        completedTime = os.time()
+    -- 获取完成时间
+    local completedTime = os.time()
+    if task.status == "complete" and task.files and task.files[1] and task.files[1].path then
+        local attr = hs.fs.attributes(task.files[1].path)
+        if attr then
+            completedTime = attr.creation
+        end
     end
     
     return {
@@ -76,25 +73,23 @@ end
 local function updateMenu(globalStat, tasks)
     if not M.menuIcon then return end
     
-    local downloadSpeed = utils.formatSpeed(globalStat.downloadSpeed)
-    local uploadSpeed = utils.formatSpeed(globalStat.uploadSpeed)
-    
-    -- 获取当前状态
-    local currentNumActive = tonumber(globalStat.numActive) or 0
-    local currentDownloadSpeed = tonumber(globalStat.downloadSpeed) or 0
-    
     -- 设置菜单栏显示
-    local statusText = "·"  -- 默认使用中间点
-    if currentNumActive > 0 and currentDownloadSpeed > 0 then
-        statusText = downloadSpeed
+    local numActive = tonumber(globalStat.numActive) or 0
+    local downloadSpeed = tonumber(globalStat.downloadSpeed) or 0
+    
+    if numActive == 0 or downloadSpeed == 0 then
+        if M.menuIcon:title() ~= "·" then
+            M.menuIcon:setTitle("·")
+        end
+    else
+        M.menuIcon:setTitle(utils.formatSpeed(globalStat.downloadSpeed))
     end
-    M.menuIcon:setTitle(statusText)
     
     -- 构建菜单项
     local menuItems = {
         {title = "--- 下载状态 ---", disabled = true},
-        {title = string.format("下载速度: %s", downloadSpeed)},
-        {title = string.format("上传速度: %s", uploadSpeed)},
+        {title = string.format("下载速度: %s", utils.formatSpeed(globalStat.downloadSpeed))},
+        {title = string.format("上传速度: %s", utils.formatSpeed(globalStat.uploadSpeed))},
         {title = string.format("活动任务: %s", globalStat.numActive)},
         {title = string.format("等待任务: %s", globalStat.numWaiting)},
         {title = string.format("已完成任务: %s", globalStat.numStopped)},
@@ -202,7 +197,12 @@ function M.updateStatus()
         client.tellActive(function(activeResponse)
             if activeResponse and activeResponse.result then
                 for _, task in ipairs(activeResponse.result) do
-                    table.insert(tasks.active, processTask(task))
+                    if task and task.status then
+                        local processedTask = processTask(task)
+                        if processedTask then
+                            table.insert(tasks.active, processedTask)
+                        end
+                    end
                 end
             end
             
@@ -210,25 +210,26 @@ function M.updateStatus()
             client.tellWaiting(function(waitingResponse)
                 if waitingResponse and waitingResponse.result then
                     for _, task in ipairs(waitingResponse.result) do
-                        table.insert(tasks.waiting, processTask(task))
+                        if task and task.status then
+                            local processedTask = processTask(task)
+                            if processedTask then
+                                table.insert(tasks.waiting, processedTask)
+                            end
+                        end
                     end
                 end
                 
                 -- 获取已停止任务
                 client.tellStopped(function(stoppedResponse)
                     if stoppedResponse and stoppedResponse.result then
-                        -- 输出完整的响应数据以进行调试
                         for _, task in ipairs(stoppedResponse.result) do
-                            print(string.format('任务详情[%s]:\n  状态: %s\n  完成时间: %s\n  文件名: %s\n  目录: %s', 
-                                task.gid,
-                                task.status,
-                                task.completedTime,
-                                task.files and task.files[1] and task.files[1].path or '无',
-                                task.dir or '无'
-                            ))
-                        end
-                        for _, task in ipairs(stoppedResponse.result) do
-                            table.insert(tasks.stopped, processTask(task))
+                                    -- 只处理任务，不输出响应数据
+                            if task and task.status then
+                                local processedTask = processTask(task)
+                                if processedTask then
+                                    table.insert(tasks.stopped, processedTask)
+                                end
+                            end
                         end
                     end
                     
@@ -253,9 +254,12 @@ function M.start()
             -- 菜单处于打开状态时也更新速度
             client.getGlobalStat(function(response)
                 if response and response.result then
-                    local downloadSpeed = utils.formatSpeed(response.result.downloadSpeed)
-                    if M.menuIcon:title() ~= downloadSpeed then
-                        M.menuIcon:setTitle(downloadSpeed)
+                    local numActive = tonumber(response.result.numActive) or 0
+                    local downloadSpeed = tonumber(response.result.downloadSpeed) or 0
+                    
+                    local title = (numActive == 0 or downloadSpeed == 0) and "·" or utils.formatSpeed(downloadSpeed)
+                    if M.menuIcon:title() ~= title then
+                        M.menuIcon:setTitle(title)
                     end
                 end
             end)

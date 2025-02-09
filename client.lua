@@ -1,4 +1,4 @@
-local log = hs.logger.new('aria2client', 'debug')
+local log = hs.logger.new('aria2client', 'info')
 
 local M = {
     rpcUrl = "http://localhost:16800/jsonrpc"
@@ -14,14 +14,16 @@ function M.request(method, params, callback)
         params = params or {""}
     })
 
-    log.d('发送请求到: ' .. M.rpcUrl)
-    log.d('请求内容: ' .. requestBody)
+    -- 仅在调试时打印请求信息
+    -- log.d('发送请求到: ' .. M.rpcUrl)
+    -- log.d('请求内容: ' .. requestBody)
 
     hs.http.asyncPost(M.rpcUrl, requestBody, {["Content-Type"] = "application/json"}, function(status, body, headers)
-        log.d('收到响应状态码: ' .. status)
-        if body then
-            log.d('响应内容: ' .. body)
-        end
+        -- 仅在调试时打印响应信息
+        -- log.d('收到响应状态码: ' .. status)
+        -- if body then
+        --     log.d('响应内容: ' .. body)
+        -- end
         
         if status == 200 and callback then
             local success, response = pcall(json.decode, body)
