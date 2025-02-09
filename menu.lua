@@ -14,7 +14,10 @@ local M = {
 
 -- 处理任务数据
 local function processTask(task)
-    local name = task.files and task.files[1] and (task.files[1].path:match("([^/]+)$") or task.files[1].path) or "未知文件"
+    if not task or not task.files or not task.files[1] or not task.files[1].path then
+        return nil
+    end
+    local name = task.files[1].path:match("([^/]+)$") or task.files[1].path
     local progress = utils.formatProgress(tonumber(task.completedLength), tonumber(task.totalLength))
     local speed = utils.formatSpeed(task.downloadSpeed)
     local size = utils.formatSize(task.totalLength)
